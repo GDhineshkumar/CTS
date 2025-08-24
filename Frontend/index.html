@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FuelPred | Production-Grade AI Fuel Analysis</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        /* --- CSS Variables and Base Styles --- */
+        :root {
+            --brand-primary: #6366F1;
+            --brand-secondary: #8B5CF6;
+            --dark-bg: #030712;
+            --dark-card: #111827;
+            --dark-border: #374151;
+            --dark-text: #F9FAFB;
+            --dark-text-secondary: #9CA3AF;
+        }
+
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--dark-bg);
+            color: var(--dark-text);
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            visibility: hidden; /* Hide body initially to prevent FOUC */
+            position: relative;
+        }
+
+        /* --- Interactive Backgrounds --- */
+        #interactive-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            pointer-events: none;
+        }
+        #cursor-glow {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 800px;
+            height: 800px;
+            background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, rgba(99, 102, 241, 0) 60%);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 0;
+            transform: translate(-50%, -50%);
+            transition: transform 0.1s ease-out;
+        }
+
+
+        /* --- Make all other content appear above the canvas --- */
+        .header, main, .footer, .message-container {
+            position: relative;
+            z-index: 2;
+        }
+
+        /* --- Animations --- */
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* --- Page & Layout --- */
+        .page { display: none; }
+        .page.active { display: block; animation: fadeIn 0.5s ease-in-out; }
+        .container {
+            width: 100%;
+            margin-left: auto;
+            margin-right: auto;
+            padding-left: 1rem;
+            padding-right: 1rem;
+        }
+        @media (min-width: 640px) { .container { max-width: 640px; padding-left: 1.5rem; padding-right: 1.5rem; } }
+        @media (min-width: 768px) { .container { max-width: 768px; } }
+        @media (min-width: 1024px) { .container { max-width: 1024px; padding-left: 2rem; padding-right: 2rem; } }
+        @media (min-width: 1280px) { .container { max-width: 1280px; } }
+        main { flex-grow: 1; }
+
+        /* --- Utility Classes --- */
+        .gradient-text { background: linear-gradient(to right, var(--brand-primary), var(--brand-secondary)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .hidden { display: none !important; }
+
+        /* --- Header & Navigation --- */
+        .header {
+            background-color: rgba(17, 24, 39, 0.3);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(55, 65, 81, 0.5);
+            position: sticky;
+            top: 0;
+            z-index: 50;
+        }
+        .nav-container { display: flex; align-items: center; justify-content: space-between; height: 5rem; }
+        .nav-brand { font-size: 1.875rem; font-weight: 900; letter-spacing: -0.05em; }
+        .nav-links { display: none; }
+        @media (min-width: 768px) { .nav-links { display: flex; align-items: center; gap: 1.5rem; } }
+        .nav-link { color: var(--dark-text-secondary); text-decoration: none; transition: color 0.2s; }
+        .nav-link:hover { color: var(--dark-text); }
+        .header-actions { display: none; }
+        @media (min-width: 768px) { .header-actions { display: block; } }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            padding: 0.625rem 1.25rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            text-decoration: none;
+            text-align: center;
+            border: none;
+            cursor: pointer;
+        }
+        .btn-primary {
+            background: linear-gradient(to right, var(--brand-primary), var(--brand-secondary));
+            color: white;
+            transition: all 0.3s ease;
+        }
+        .btn-primary:hover { box-shadow: 0 0 25px rgba(99, 102, 241, 0.6); transform: translateY(-3px); }
+        .btn-secondary {
+            background-color: var(--dark-border);
+            color: var(--dark-text);
+        }
+        .btn-secondary:hover { background-color: #4B5563; }
+        .btn-logout { background-color: #DC2626; color: white; }
+        .btn-logout:hover { background-color: #B91C1C; }
+        .btn .spinner {
+            width: 1rem;
+            height: 1rem;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        /* --- Mobile Menu --- */
+        .mobile-menu-button { display: block; }
+        @media (min-width: 768px) { .mobile-menu-button { display: none; } }
+        .mobile-menu { border-top: 1px solid var(--dark-border); padding: 1rem 0.5rem; }
+        .mobile-menu .nav-link { display: block; padding: 0.5rem 0.75rem; border-radius: 0.375rem; }
+        .mobile-menu .nav-link:hover { background-color: var(--dark-border); }
+
+        /* --- Home Page --- */
+        .hero-section { text-align: center; padding: 6rem 0; position: relative; }
+        .hero-title { font-size: 3rem; font-weight: 900; line-height: 1.1; letter-spacing: -0.025em; animation: fadeInUp 0.6s ease-in-out forwards; animation-delay: 0.1s; opacity: 0; }
+        .hero-subtitle { margin: 1.5rem auto 0; max-width: 42rem; font-size: 1.125rem; color: var(--dark-text-secondary); animation: fadeInUp 0.6s ease-in-out forwards; animation-delay: 0.2s; opacity: 0; }
+        .hero-cta { margin-top: 2.5rem; animation: fadeInUp 0.6s ease-in-out forwards; animation-delay: 0.3s; opacity: 0; }
+        .hero-cta .btn { padding: 1rem 2.5rem; font-size: 1.125rem; }
+        .features-grid { display: grid; grid-template-columns: 1fr; gap: 2rem; padding-bottom: 6rem; }
+        @media (min-width: 768px) { .features-grid { grid-template-columns: repeat(3, 1fr); } }
+        .feature-card {
+            background-color: var(--dark-card);
+            border: 1px solid rgba(55, 65, 81, 0.5);
+            padding: 2rem;
+            border-radius: 1rem;
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        .feature-card h3 { font-size: 1.25rem; font-weight: 700; color: var(--dark-text); }
+        .feature-card p { margin-top: 0.5rem; color: var(--dark-text-secondary); }
+
+        /* --- Auth Page --- */
+        .auth-page-container { display: flex; align-items: center; justify-content: center; min-height: 80vh; }
+        .auth-card { max-width: 28rem; width: 100%; background-color: var(--dark-card); border: 1px solid rgba(55, 65, 81, 0.5); padding: 2rem; border-radius: 1rem; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); }
+        .auth-toggle { position: relative; display: flex; margin-bottom: 2rem; background-color: var(--dark-bg); padding: 0.25rem; border-radius: 0.5rem; }
+        .auth-toggle-slider { position: absolute; top: 4px; bottom: 4px; width: calc(50% - 4px); background-color: var(--brand-primary); border-radius: 0.375rem; transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .auth-toggle-slider.right { transform: translateX(calc(100% - 4px)); }
+        .auth-toggle button { position: relative; width: 50%; padding: 0.625rem 0; font-weight: 600; z-index: 10; transition: color 0.3s; border: none; background: none; }
+        .form-title { font-size: 1.875rem; font-weight: 700; text-align: center; margin-bottom: 1.5rem; color: var(--dark-text); }
+        .form-group { margin-bottom: 1.5rem; }
+        .form-group label { display: block; font-size: 0.875rem; font-weight: 500; color: var(--dark-text-secondary); }
+        .form-input {
+            margin-top: 0.25rem;
+            display: block;
+            width: 100%;
+            padding: 0.75rem 1rem;
+            background-color: var(--dark-bg);
+            border: 1px solid var(--dark-border);
+            border-radius: 0.5rem;
+            color: var(--dark-text);
+            box-sizing: border-box;
+        }
+        .form-input:focus { outline: none; box-shadow: 0 0 0 2px var(--brand-primary); border-color: transparent; }
+
+        /* --- Prediction Page --- */
+        .prediction-container { max-width: 64rem; margin: auto; }
+        .prediction-card { background-color: var(--dark-card); border: 1px solid rgba(55, 65, 81, 0.5); padding: 2.5rem; border-radius: 1rem; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); }
+        .prediction-title { font-size: 2.25rem; font-weight: 900; letter-spacing: -0.025em; margin-bottom: 1.5rem; }
+        .prediction-form-grid { display: grid; grid-template-columns: 1fr; gap: 1.5rem; }
+        @media (min-width: 768px) { .prediction-form-grid { grid-template-columns: repeat(5, 1fr); } }
+        .grid-col-span-2 { grid-column: span 2 / span 2; }
+        .grid-col-span-3 { grid-column: span 3 / span 3; }
+        .grid-col-span-5 { grid-column: span 5 / span 5; }
+        .form-label-group { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+        .form-select { width: 100%; padding: 0.75rem 1rem; background-color: var(--dark-bg); border: 1px solid var(--dark-border); border-radius: 0.5rem; color: var(--dark-text); }
+        .form-textarea { width: 100%; padding: 0.75rem 1rem; background-color: var(--dark-bg); border: 1px solid var(--dark-border); border-radius: 0.5rem; color: var(--dark-text); font-family: monospace; }
+        .file-import-wrapper { margin-top: 0.5rem; }
+        #csv-file-input { display: none; }
+        #csv-file-label {
+            display: block;
+            padding: 2rem;
+            border: 2px dashed var(--dark-border);
+            border-radius: 0.5rem;
+            text-align: center;
+            cursor: pointer;
+            color: var(--dark-text-secondary);
+        }
+        #csv-file-label:hover { border-color: var(--brand-primary); color: var(--dark-text); }
+        #csv-file-name { margin-top: 0.5rem; font-style: italic; }
+        .results-container { margin-top: 2rem; }
+        .results-table-wrapper { overflow: hidden; border: 1px solid var(--dark-border); border-radius: 0.5rem; }
+        .results-table { min-width: 100%; border-collapse: collapse; }
+        .results-table th, .results-table td { padding: 1rem 1.5rem; text-align: left; }
+        .results-table thead { background-color: rgba(3, 7, 18, 0.5); }
+        .results-table th { font-size: 0.75rem; font-weight: 600; color: var(--dark-text-secondary); text-transform: uppercase; letter-spacing: 0.05em; }
+        .results-table tbody tr { border-top: 1px solid var(--dark-border); }
+        .results-table td { font-size: 0.875rem; font-family: monospace; }
+        .metrics-card { margin-top: 2rem; padding: 1.5rem; background-color: rgba(3, 7, 18, 0.5); border-radius: 0.5rem; border: 1px solid var(--dark-border); }
+        .metrics-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+        @media (min-width: 640px) { .metrics-grid { grid-template-columns: repeat(4, 1fr); } }
+        #gemini-analysis-container { margin-top: 2rem; padding: 1.5rem; background-color: rgba(3, 7, 18, 0.5); border-radius: 0.5rem; border: 1px solid var(--dark-border); }
+        #gemini-analysis-container h4 { font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem; }
+        #gemini-analysis-container p { color: var(--dark-text-secondary); line-height: 1.75; }
+        .optimizer-log { margin-top: 2rem; background-color: var(--dark-bg); border-radius: 0.5rem; padding: 1.5rem; border: 1px solid var(--dark-border); }
+        .optimizer-log h4 { font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem; }
+        .optimizer-log-entry { font-family: monospace; font-size: 0.875rem; padding: 0.5rem; border-bottom: 1px solid var(--dark-border); }
+        .optimizer-log-entry:last-child { border-bottom: none; }
+        .optimizer-recommendation { border: 2px solid var(--brand-primary); box-shadow: 0 0 20px rgba(99, 102, 241, 0.4); }
+
+        /* --- About Page --- */
+        .about-section { padding: 4rem 0; }
+        .about-content { max-width: 48rem; margin: auto; }
+        .about-title { font-size: 2.5rem; font-weight: 800; text-align: center; }
+        .about-card { background-color: var(--dark-card); border: 1px solid rgba(55, 65, 81, 0.5); padding: 2rem; border-radius: 1rem; margin-top: 2rem; }
+        .about-card h3 { font-size: 1.5rem; font-weight: 700; color: var(--brand-primary); }
+        .about-card p { margin-top: 1rem; color: var(--dark-text-secondary); line-height: 1.75; }
+        .about-card ul { margin-top: 1rem; list-style-position: inside; padding-left: 0; }
+        .about-card li { margin-bottom: 0.5rem; }
+        .about-card li::before { content: '✓'; color: var(--brand-primary); margin-right: 0.5rem; }
+        .team-list p { margin-top: 0.5rem; }
+        .team-list strong { color: var(--dark-text); }
+
+
+        /* --- Footer --- */
+        .footer { background-color: rgba(17, 24, 39, 0.3); border-top: 1px solid rgba(55, 65, 81, 0.5); margin-top: auto; padding: 1.5rem 0; text-align: center; color: var(--dark-text-secondary); }
+
+        /* --- Message/Error Toasts --- */
+        .message-container { position: fixed; top: 1.25rem; right: 1.25rem; z-index: 100; max-width: 24rem; width: 100%; }
+        .toast { display: flex; align-items: flex-start; padding: 1rem; margin-bottom: 1rem; border-radius: 0.5rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05); font-size: 0.875rem; font-weight: 500; animation: fadeIn 0.5s; }
+        .toast-success { background-color: rgba(5, 150, 105, 0.9); color: white; }
+        .toast-error { background-color: rgba(220, 38, 38, 0.9); color: white; }
+        .toast svg { width: 1.25rem; height: 1.25rem; margin-right: 0.75rem; flex-shrink: 0; }
+    </style>
+</head>
+<body>
+    
+    <!-- Interactive Backgrounds -->
+    <div id="cursor-glow"></div>
+    <canvas id="interactive-canvas"></canvas>
+
+    <!-- Header & Navigation -->
+    <header class="header">
+        <nav class="container">
+            <div class="nav-container">
+                <div class="flex-shrink-0">
+                    <a href="#home" class="nav-link nav-brand gradient-text">FuelPred</a>
+                </div>
+                <div class="nav-links">
+                    <a href="#home" class="nav-link">Home</a>
+                    <a href="#predict" id="nav-predict" class="nav-link hidden">Predict</a>
+                    <a href="#about" class="nav-link">About</a>
+                </div>
+                <div class="header-actions">
+                     <div id="auth-links"><a href="#auth" id="nav-login" class="nav-link btn btn-primary">Get Started</a></div>
+                     <div id="user-actions" class="hidden" style="display:flex; align-items:center; gap: 1rem;">
+                        <span id="welcome-user"></span>
+                        <button id="logoutBtn" class="btn btn-logout">Logout</button>
+                     </div>
+                </div>
+                <div class="mobile-menu-button">
+                    <button type="button" id="mobile-menu-button" class="p-2 rounded-md text-dark-text-secondary focus:outline-none"><span class="sr-only">Menu</span><svg class="h-6 w-6" id="menu-open-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"/></svg><svg class="h-6 w-6 hidden" id="menu-close-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
+                </div>
+            </div>
+        </nav>
+        <div class="md:hidden hidden" id="mobile-menu">
+            <div class="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+                <a href="#home" class="nav-link text-dark-text-secondary hover:bg-dark-border hover:text-white block px-3 py-2 rounded-md text-base font-medium">Home</a>
+                <a href="#predict" id="mobile-nav-predict" class="nav-link text-dark-text-secondary hover:bg-dark-border hover:text-white block px-3 py-2 rounded-md text-base font-medium hidden">Predict</a>
+                <a href="#about" class="nav-link text-dark-text-secondary hover:bg-dark-border hover:text-white block px-3 py-2 rounded-md text-base font-medium">About</a>
+            </div>
+            <div class="pt-4 pb-3 border-t border-dark-border">
+                <div id="mobile-auth-links" class="px-5"><a href="#auth" class="nav-link w-full text-center btn btn-primary">Get Started</a></div>
+                <div id="mobile-user-actions" class="hidden mt-3 px-2 space-y-2">
+                    <div class="flex items-center px-3"><span id="mobile-welcome-user" class="text-base font-medium text-white"></span></div>
+                    <button id="mobile-logoutBtn" class="w-full text-left block px-3 py-2 rounded-md text-base font-medium text-red-400 bg-red-900/20 hover:bg-red-900/50">Logout</button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <!-- Home Page -->
+        <section id="home" class="page active relative overflow-hidden">
+            <div class="container hero-section">
+                <h1 class="hero-title">The Future of <span class="gradient-text">Fuel Analysis</span> is Here</h1>
+                <p class="hero-subtitle">Leverage our production-grade AI to instantly predict fuel blend properties. Drastically cut R&D time, minimize lab costs, and innovate faster.</p>
+                <div class="hero-cta">
+                    <a href="#predict" class="nav-link btn btn-primary">Launch Prediction Engine</a>
+                </div>
+            </div>
+            <div class="container">
+                <div class="features-grid">
+                    <div class="feature-card">
+                        <h3>Instant Predictions</h3>
+                        <p>Get results in seconds, not weeks. Our model processes complex data instantly, giving you immediate feedback.</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>Cost Reduction</h3>
+                        <p>Significantly reduce the need for expensive and time-consuming physical lab tests for every blend iteration.</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>Data-Driven Decisions</h3>
+                        <p>Make smarter, data-backed decisions to optimize fuel performance and meet regulatory standards.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Auth Page -->
+        <section id="auth" class="page">
+             <div class="container auth-page-container">
+                <div class="auth-card">
+                    <div class="auth-toggle">
+                        <div class="auth-toggle-slider"></div>
+                        <button id="showLoginBtn">Login</button>
+                        <button id="showRegisterBtn">Register</button>
+                    </div>
+                    <div id="loginForm">
+                        <h2 class="form-title">Welcome Back</h2>
+                        <form id="login-form">
+                            <div class="form-group"><label for="login-username">Username</label><input type="text" id="login-username" name="username" required class="form-input"></div>
+                            <div class="form-group"><label for="login-password">Password</label><input type="password" id="login-password" name="password" required class="form-input"></div>
+                            <button type="submit" class="btn btn-primary" style="width: 100%;">Secure Login</button>
+                        </form>
+                    </div>
+                    <div id="registerForm" class="hidden">
+                        <h2 class="form-title">Create Account</h2>
+                        <form id="register-form">
+                            <div class="form-group"><label for="register-email">Email</label><input type="email" id="register-email" name="email" required class="form-input"></div>
+                            <div class="form-group"><label for="register-username">Username</label><input type="text" id="register-username" name="username" required class="form-input"></div>
+                            <div class="form-group"><label for="register-password">Password</label><input type="password" id="register-password" name="password" required class="form-input"></div>
+                            <button type="submit" class="btn btn-primary" style="width: 100%;">Create Account</button>
+                        </form>
+                    </div>
+                </div>
+             </div>
+        </section>
+
+        <!-- Prediction Page -->
+        <section id="predict" class="page">
+            <div class="container" style="padding-top: 2rem; padding-bottom: 2rem;">
+                <div class="prediction-container">
+                    <div class="prediction-card">
+                        <div class="auth-toggle" style="max-width: 300px; margin-bottom: 2rem;">
+                            <div id="engine-toggle-slider" class="auth-toggle-slider"></div>
+                            <button id="show-predictor-btn">Predictor</button>
+                            <button id="show-optimizer-btn">Optimizer</button>
+                        </div>
+
+                        <!-- Predictor Form -->
+                        <div id="predictor-form-wrapper">
+                            <h2 class="prediction-title">Prediction Engine</h2>
+                            <form id="prediction-form">
+                                <div class="prediction-form-grid">
+                                    <div class="grid-col-span-2">
+                                        <label for="data-type" class="form-group">Input Data Type</label>
+                                        <select id="data-type" name="data_type" class="form-select"><option value="json">JSON</option><option value="csv">CSV</option></select>
+                                    </div>
+                                    <div class="grid-col-span-5">
+                                        <div class="form-label-group">
+                                            <label for="input-data" class="form-group">Input Data</label>
+                                            <button type="button" id="generate-sample-btn" class="btn btn-secondary" style="padding: 0.25rem 0.75rem; font-size: 0.875rem;">✨ Generate Sample</button>
+                                        </div>
+                                        <div id="json-input-wrapper">
+                                            <textarea id="input-data" name="data" rows="12" class="form-textarea" placeholder='For JSON: [{"feature1": 1, "feature2": 2}]'></textarea>
+                                        </div>
+                                        <div id="csv-input-wrapper" class="hidden">
+                                            <div class="file-import-wrapper">
+                                                <input type="file" id="csv-file-input" accept=".csv">
+                                                <label for="csv-file-input" id="csv-file-label">
+                                                    Click to import CSV File
+                                                    <div id="csv-file-name"></div>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <button type="submit" class="btn btn-primary" style="width:100%; margin-top: 2rem; padding: 1rem 0; font-size: 1.125rem; font-weight: 700;">Run Prediction</button>
+                            </form>
+                        </div>
+
+                        <!-- Optimizer Form -->
+                        <div id="optimizer-form-wrapper" class="hidden">
+                            <h2 class="prediction-title">AI Blend Optimizer</h2>
+                            <form id="optimizer-form">
+                                <div class="prediction-form-grid">
+                                    <div class="grid-col-span-3">
+                                        <label for="optimizer-objective-property" class="form-group">Objective Property</label>
+                                        <select id="optimizer-objective-property" class="form-select">
+                                            <option>RON</option><option>MON</option><option>Density</option><option>Aromatics</option><option>Olefins</option>
+                                        </select>
+                                    </div>
+                                    <div class="grid-col-span-2">
+                                        <label for="optimizer-objective-goal" class="form-group">Goal</label>
+                                        <select id="optimizer-objective-goal" class="form-select">
+                                            <option value="Maximize">Maximize</option><option value="Minimize">Minimize</option>
+                                        </select>
+                                    </div>
+                                    <div class="grid-col-span-5">
+                                        <label class="form-group">Constraints (Optional)</label>
+                                        <div id="optimizer-constraints-container">
+                                            <!-- Constraints will be added here by JS -->
+                                        </div>
+                                        <button type="button" id="add-constraint-btn" class="btn btn-secondary" style="margin-top: 1rem;">+ Add Constraint</button>
+                                    </div>
+                                </div>
+                                <button type="submit" class="btn btn-primary" style="width:100%; margin-top: 2rem; padding: 1rem 0; font-size: 1.125rem; font-weight: 700;">Start Optimization</button>
+                            </form>
+                        </div>
+                    </div>
+                    <div id="results-container" class="results-container prediction-card hidden">
+                        <h3 class="prediction-title" style="font-size: 1.875rem;">Prediction Results</h3>
+                        <div id="results"></div>
+                        <div id="gemini-analysis-container" class="hidden">
+                            <h4>✨ AI Analysis</h4>
+                            <p id="gemini-analysis-text"></p>
+                        </div>
+                        <button id="analyze-results-btn" class="btn btn-primary hidden" style="width:100%; margin-top: 2rem;">✨ Analyze Results</button>
+                    </div>
+                     <div id="optimizer-log-container" class="optimizer-log hidden">
+                        <h4>✨ AI Optimization Log</h4>
+                        <div id="optimizer-log-entries"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- About Page -->
+        <section id="about" class="page">
+            <div class="container about-section">
+                <div class="about-content">
+                    <h2 class="about-title">About <span class="gradient-text">FuelPred</span></h2>
+                    <div class="about-card">
+                        <h3>Our Mission</h3>
+                        <p>FuelPred was created to revolutionize the fuel industry by leveraging the power of machine learning. Our goal is to provide an accessible, fast, and reliable tool for engineers, researchers, and chemists to predict fuel blend properties without the need for extensive physical testing. By accelerating the research and development cycle, we aim to foster innovation and efficiency in creating cleaner and more effective fuels.</p>
+                    </div>
+                    <div class="about-card">
+                        <h3>The Technology</h3>
+                        <p>This application is built with a modern, robust technology stack:</p>
+                        <ul>
+                            <li><strong>Backend:</strong> A powerful API built with Python and FastAPI, serving a pre-trained machine learning model. It handles authentication, data processing, and prediction logic.</li>
+                            <li><strong>Frontend:</strong> A clean, responsive user interface created with standard HTML, CSS, and JavaScript. No heavy frameworks, ensuring maximum performance and maintainability.</li>
+                            <li><strong>Machine Learning:</strong> The core prediction engine uses a model trained on a comprehensive dataset of fuel blend properties, ensuring accurate and valuable insights.</li>
+                            <li><strong>AI Features:</strong> Powered by the Gemini API for intelligent sample data generation and results analysis.</li>
+                        </ul>
+                    </div>
+                    <div class="about-card">
+                        <h3>Meet the Team</h3>
+                        <div class="team-list">
+                            <p><strong>Backend Developer:</strong> Kalaiselvam M</p>
+                            <p><strong>Frontend Developer:</strong> Dhinesh Kumar G</p>
+                            <p><strong>ML Model:</strong> _________________________</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer"><div class="container"><p>&copy; 2024 FuelPred. All Rights Reserved.</p></div></footer>
+
+    <!-- Message/Error Display -->
+    <div id="message-container" class="message-container"></div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        document.body.style.visibility = 'visible';
+
+        // --- Interactive Canvas Logic ---
+        const canvas = document.getElementById('interactive-canvas');
+        const ctx = canvas.getContext('2d');
+        let particles = [];
+        const mouse = { x: null, y: null };
+        const cursorGlow = document.getElementById('cursor-glow');
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        window.addEventListener('mousemove', (e) => {
+            mouse.x = e.x;
+            mouse.y = e.y;
+            cursorGlow.style.left = e.x + 'px';
+            cursorGlow.style.top = e.y + 'px';
+            for (let i = 0; i < 3; i++) {
+                particles.push(new Particle());
+            }
+        });
+
+        class Particle {
+            constructor() {
+                this.x = mouse.x;
+                this.y = mouse.y;
+                this.size = Math.random() * 2 + 1;
+                this.speedX = Math.random() * 2 - 1;
+                this.speedY = Math.random() * 2 + 1;
+                this.color = `hsl(${Math.random() * 50 + 220}, 100%, 70%)`;
+                this.life = 0;
+                this.maxLife = Math.random() * 100 + 50;
+            }
+            update() {
+                this.x += this.speedX;
+                this.y += this.speedY;
+                this.speedY += 0.05; // Gravity
+                this.life++;
+                if (this.size > 0.1) this.size -= 0.03;
+            }
+            draw() {
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function handleParticles() {
+            for (let i = 0; i < particles.length; i++) {
+                particles[i].update();
+                particles[i].draw();
+                if (particles[i].size <= 0.1 || particles[i].life > particles[i].maxLife) {
+                    particles.splice(i, 1);
+                    i--;
+                }
+            }
+        }
+
+        function animate() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            handleParticles();
+            requestAnimationFrame(animate);
+        }
+        animate();
+
+
+        // --- Application Logic ---
+        const API_BASE_URL = 'http://127.0.0.1:8000';
+
+        const ELS = {
+            pages: document.querySelectorAll('.page'),
+            navLinks: document.querySelectorAll('.nav-link'),
+            mobileMenu: {
+                button: document.getElementById('mobile-menu-button'),
+                menu: document.getElementById('mobile-menu'),
+                openIcon: document.getElementById('menu-open-icon'),
+                closeIcon: document.getElementById('menu-close-icon'),
+            },
+            forms: {
+                login: document.getElementById('login-form'),
+                register: document.getElementById('register-form'),
+                prediction: document.getElementById('prediction-form'),
+                optimizer: document.getElementById('optimizer-form'),
+            },
+            results: {
+                container: document.getElementById('results-container'),
+                div: document.getElementById('results'),
+                analyzeBtn: document.getElementById('analyze-results-btn'),
+                analysisContainer: document.getElementById('gemini-analysis-container'),
+                analysisText: document.getElementById('gemini-analysis-text'),
+            },
+            authToggle: {
+                loginBtn: document.getElementById('showLoginBtn'),
+                registerBtn: document.getElementById('showRegisterBtn'),
+                loginForm: document.getElementById('loginForm'),
+                registerForm: document.getElementById('registerForm'),
+                slider: document.querySelector('.auth-toggle-slider'),
+            },
+            engineToggle: {
+                predictorBtn: document.getElementById('show-predictor-btn'),
+                optimizerBtn: document.getElementById('show-optimizer-btn'),
+                predictorWrapper: document.getElementById('predictor-form-wrapper'),
+                optimizerWrapper: document.getElementById('optimizer-form-wrapper'),
+                slider: document.getElementById('engine-toggle-slider'),
+            },
+            optimizerUi: {
+                logContainer: document.getElementById('optimizer-log-container'),
+                logEntries: document.getElementById('optimizer-log-entries'),
+                addConstraintBtn: document.getElementById('add-constraint-btn'),
+                constraintsContainer: document.getElementById('optimizer-constraints-container'),
+            },
+            ui: {
+                messageContainer: document.getElementById('message-container'),
+                navPredict: document.getElementById('nav-predict'),
+                mobileNavPredict: document.getElementById('mobile-nav-predict'),
+                authLinks: document.getElementById('auth-links'),
+                mobileAuthLinks: document.getElementById('mobile-auth-links'),
+                userActions: document.getElementById('user-actions'),
+                mobileUserActions: document.getElementById('mobile-user-actions'),
+                logoutBtns: [document.getElementById('logoutBtn'), document.getElementById('mobile-logoutBtn')],
+                welcomeSpans: [document.getElementById('welcome-user'), document.getElementById('mobile-welcome-user')],
+                generateSampleBtn: document.getElementById('generate-sample-btn'),
+                inputData: document.getElementById('input-data'),
+                dataType: document.getElementById('data-type'),
+                jsonInputWrapper: document.getElementById('json-input-wrapper'),
+                csvInputWrapper: document.getElementById('csv-input-wrapper'),
+                csvFileInput: document.getElementById('csv-file-input'),
+                csvFileName: document.getElementById('csv-file-name'),
+            }
+        };
+
+        let token = localStorage.getItem('accessToken');
+        let username = localStorage.getItem('username');
+        let lastPrediction = null;
+        let csvFileContent = null;
+
+        const showPage = (pageId) => {
+            if (pageId === 'predict' && !token) {
+                window.location.hash = 'auth';
+                showMessage('Please log in to access the prediction engine.', true);
+                return;
+            }
+            ELS.pages.forEach(page => page.classList.toggle('active', page.id === pageId));
+            window.scrollTo(0, 0);
+            
+            if (pageId === 'home') {
+                const cards = document.querySelectorAll('.feature-card');
+                cards.forEach((card, index) => {
+                    setTimeout(() => {
+                        card.style.transition = 'opacity 0.5s, transform 0.5s';
+                        card.style.opacity = '1';
+                        card.style.transform = 'translateY(0)';
+                    }, (index * 150) + 400);
+                });
+            }
+        };
+
+        const handleNav = (e) => {
+            e.preventDefault();
+            const pageId = e.currentTarget.getAttribute('href').substring(1);
+            window.location.hash = pageId;
+            if (!ELS.mobileMenu.menu.classList.contains('hidden')) {
+                ELS.mobileMenu.menu.classList.add('hidden');
+                ELS.mobileMenu.openIcon.classList.remove('hidden');
+                ELS.mobileMenu.closeIcon.classList.add('hidden');
+            }
+        };
+
+        ELS.navLinks.forEach(link => link.addEventListener('click', handleNav));
+        window.addEventListener('hashchange', () => showPage(window.location.hash.substring(1) || 'home'));
+        ELS.mobileMenu.button.addEventListener('click', () => {
+            const isHidden = ELS.mobileMenu.menu.classList.toggle('hidden');
+            ELS.mobileMenu.openIcon.classList.toggle('hidden', !isHidden);
+            ELS.mobileMenu.closeIcon.classList.toggle('hidden', isHidden);
+        });
+
+        const updateUI = () => {
+            const loggedIn = token && username;
+            ELS.ui.navPredict.classList.toggle('hidden', !loggedIn);
+            ELS.ui.mobileNavPredict.classList.toggle('hidden', !loggedIn);
+            ELS.ui.authLinks.classList.toggle('hidden', loggedIn);
+            ELS.ui.mobileAuthLinks.classList.toggle('hidden', loggedIn);
+            ELS.ui.userActions.classList.toggle('hidden', !loggedIn);
+            ELS.ui.userActions.style.display = loggedIn ? 'flex' : 'none';
+            ELS.ui.mobileUserActions.classList.toggle('hidden', !loggedIn);
+            
+            if (loggedIn) {
+                ELS.ui.welcomeSpans.forEach(span => span.textContent = `Welcome, ${username}`);
+            }
+            showPage(window.location.hash.substring(1) || 'home');
+        };
+        
+        const switchAuthForm = (showLogin) => {
+            ELS.authToggle.loginForm.classList.toggle('hidden', !showLogin);
+            ELS.authToggle.registerForm.classList.toggle('hidden', showLogin);
+            ELS.authToggle.slider.classList.toggle('right', !showLogin);
+            ELS.authToggle.loginBtn.style.color = showLogin ? 'var(--dark-text)' : 'var(--dark-text-secondary)';
+            ELS.authToggle.registerBtn.style.color = !showLogin ? 'var(--dark-text)' : 'var(--dark-text-secondary)';
+        };
+        ELS.authToggle.loginBtn.addEventListener('click', () => switchAuthForm(true));
+        ELS.authToggle.registerBtn.addEventListener('click', () => switchAuthForm(false));
+
+        const switchEngineMode = (showPredictor) => {
+            ELS.engineToggle.predictorWrapper.classList.toggle('hidden', !showPredictor);
+            ELS.engineToggle.optimizerWrapper.classList.toggle('hidden', showPredictor);
+            ELS.engineToggle.slider.classList.toggle('right', !showPredictor);
+            ELS.engineToggle.predictorBtn.style.color = showPredictor ? 'var(--dark-text)' : 'var(--dark-text-secondary)';
+            ELS.engineToggle.optimizerBtn.style.color = !showPredictor ? 'var(--dark-text)' : 'var(--dark-text-secondary)';
+            ELS.results.container.classList.add('hidden');
+            ELS.optimizerUi.logContainer.classList.add('hidden');
+        };
+        ELS.engineToggle.predictorBtn.addEventListener('click', () => switchEngineMode(true));
+        ELS.engineToggle.optimizerBtn.addEventListener('click', () => switchEngineMode(false));
+        
+        const showMessage = (msg, isError = false) => {
+            const messageEl = document.createElement('div');
+            const icon = isError ? `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" /></svg>` : `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>`;
+            messageEl.className = `toast ${isError ? 'toast-error' : 'toast-success'}`;
+            messageEl.innerHTML = `${icon}<span>${msg}</span>`;
+            ELS.ui.messageContainer.appendChild(messageEl);
+            setTimeout(() => {
+                messageEl.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+                messageEl.style.opacity = '0';
+                messageEl.style.transform = 'translateX(20px)';
+                setTimeout(() => messageEl.remove(), 500);
+            }, 5000);
+        };
+        
+        const handleApiCall = async (url, options) => {
+            try {
+                const response = await fetch(url, options);
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.detail || 'An unknown error occurred.');
+                return data;
+            } catch (error) {
+                console.error('API Error:', error);
+                showMessage(error.message, true);
+                throw error;
+            }
+        };
+
+        const callGeminiAPI = async (prompt, button) => {
+            const originalText = button.innerHTML;
+            button.disabled = true;
+            button.innerHTML = `<div class="spinner"></div> Generating...`;
+            
+            try {
+                let chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+                const payload = { contents: chatHistory };
+                const apiKey = ""; 
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+                
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Gemini API request failed with status ${response.status}`);
+                }
+
+                const result = await response.json();
+                if (result.candidates && result.candidates.length > 0 && result.candidates[0].content.parts.length > 0) {
+                    return result.candidates[0].content.parts[0].text;
+                } else {
+                    throw new Error("Invalid response structure from Gemini API.");
+                }
+            } catch (error) {
+                console.error("Gemini API Error:", error);
+                showMessage("Failed to get response from AI. Please try again.", true);
+                return null;
+            } finally {
+                button.disabled = false;
+                button.innerHTML = originalText;
+            }
+        };
+
+        ELS.forms.register.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const userData = Object.fromEntries(new FormData(ELS.forms.register).entries());
+            try {
+                await handleApiCall(`${API_BASE_URL}/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(userData) });
+                showMessage('Registration successful! Please log in.');
+                ELS.forms.register.reset();
+                switchAuthForm(true);
+            } catch (error) {}
+        });
+
+        ELS.forms.login.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(ELS.forms.login);
+            const loginData = new URLSearchParams();
+            const currentUsername = formData.get('username');
+            loginData.append('username', currentUsername);
+            loginData.append('password', formData.get('password'));
+            try {
+                const data = await handleApiCall(`${API_BASE_URL}/auth/token`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: loginData });
+                token = data.access_token;
+                username = currentUsername;
+                localStorage.setItem('accessToken', token);
+                localStorage.setItem('username', username);
+                showMessage('Login successful!');
+                ELS.forms.login.reset();
+                updateUI();
+                window.location.hash = 'predict';
+            } catch (error) {}
+        });
+
+        const handleLogout = () => {
+            token = null; username = null;
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('username');
+            ELS.results.container.classList.add('hidden');
+            ELS.results.div.innerHTML = '';
+            updateUI();
+            window.location.hash = 'home';
+            showMessage('You have been logged out.');
+        };
+        ELS.ui.logoutBtns.forEach(btn => btn.addEventListener('click', handleLogout));
+
+        ELS.forms.prediction.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data_type = ELS.ui.dataType.value;
+            let data;
+
+            if (data_type === 'json') {
+                data = ELS.ui.inputData.value;
+                try { data = JSON.parse(data); } 
+                catch (jsonError) { return showMessage('Invalid JSON format.', true); }
+            } else {
+                if (!csvFileContent) {
+                    return showMessage('Please import a CSV file.', true);
+                }
+                data = csvFileContent;
+            }
+
+            try {
+                const result = await handleApiCall(`${API_BASE_URL}/api/predict/fuel`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ data, data_type }) });
+                displayResults(result);
+            } catch (error) {
+                if (error.message.includes("Could not validate credentials")) {
+                    showMessage("Session expired. Please log in again.", true);
+                    handleLogout();
+                }
+            }
+        });
+
+        ELS.ui.dataType.addEventListener('change', (e) => {
+            const isCSV = e.target.value === 'csv';
+            ELS.ui.jsonInputWrapper.classList.toggle('hidden', isCSV);
+            ELS.ui.csvInputWrapper.classList.toggle('hidden', !isCSV);
+        });
+
+        ELS.ui.csvFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            ELS.ui.csvFileName.textContent = file.name;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                csvFileContent = event.target.result;
+            };
+            reader.readAsText(file);
+        });
+
+        ELS.ui.generateSampleBtn.addEventListener('click', async () => {
+            const dataType = ELS.ui.dataType.value;
+            const prompt = `Generate a sample dataset for a fuel prediction model. The required format is ${dataType}. The data should contain realistic values for 5-7 chemical properties (e.g., 'RON', 'MON', 'Density', 'Aromatics', 'Olefins'). Provide only the raw ${dataType} string, without any explanation or code fences.`;
+            const sampleData = await callGeminiAPI(prompt, ELS.ui.generateSampleBtn);
+            if (sampleData) {
+                if (dataType === 'json') {
+                    ELS.ui.inputData.value = sampleData;
+                } else {
+                    csvFileContent = sampleData;
+                    ELS.ui.csvFileName.textContent = 'sample_data.csv (AI Generated)';
+                }
+            }
+        });
+
+        ELS.results.analyzeBtn.addEventListener('click', async () => {
+            if (!lastPrediction) return;
+            const predictionString = JSON.stringify(lastPrediction.prediction, null, 2);
+            const prompt = `The following JSON contains predicted properties of a fuel blend: ${predictionString}. Provide a brief, high-level analysis for a non-expert. Explain what these properties might imply about the fuel's performance, efficiency, or emissions in simple terms. Keep the analysis to 2-3 sentences.`;
+            const analysis = await callGeminiAPI(prompt, ELS.results.analyzeBtn);
+            if (analysis) {
+                ELS.results.analysisText.textContent = analysis;
+                ELS.results.analysisContainer.classList.remove('hidden');
+            }
+        });
+
+        const displayResults = (data, isOptimizer = false) => {
+            ELS.results.div.innerHTML = '';
+            ELS.results.analysisContainer.classList.add('hidden');
+            ELS.results.analysisText.textContent = '';
+            lastPrediction = null;
+
+            if (data.status === 'success' && data.prediction && data.prediction.length > 0) {
+                lastPrediction = data;
+                const tableHTML = `<div class="results-table-wrapper"><table class="results-table"><thead><tr>${Object.keys(data.prediction[0]).map(h => `<th>${h.replace(/_/g, ' ')}</th>`).join('')}</tr></thead><tbody>${data.prediction.map(p => `<tr>${Object.values(p).map(v => `<td>${typeof v === 'number' ? v.toFixed(4) : v}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+                ELS.results.div.innerHTML = tableHTML;
+                if (data.model_metrics) {
+                    const metricsHTML = `<div class="metrics-card"><h4 style="font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem;">Model Metrics</h4><div class="metrics-grid">${Object.entries(data.model_metrics).map(([key, value]) => `<p><strong>${key.replace(/_/g, ' ')}:</strong> ${value}</p>`).join('')}</div></div>`;
+                    ELS.results.div.innerHTML += metricsHTML;
+                }
+                ELS.results.analyzeBtn.classList.remove('hidden');
+            } else { 
+                ELS.results.div.textContent = data.message || 'An error occurred.';
+                ELS.results.analyzeBtn.classList.add('hidden');
+            }
+            if (!isOptimizer) {
+                 ELS.results.container.classList.remove('hidden');
+                 ELS.results.container.scrollIntoView({ behavior: 'smooth' });
+            }
+        };
+
+        // --- Optimizer Logic ---
+        function addConstraint() {
+            const id = Date.now();
+            const constraintHTML = `
+                <div id="constraint-${id}" class="prediction-form-grid" style="margin-top: 1rem; align-items: center;">
+                    <div class="grid-col-span-2">
+                        <select class="form-select">
+                            <option>RON</option><option>MON</option><option>Density</option><option>Aromatics</option><option>Olefins</option>
+                        </select>
+                    </div>
+                    <div class="grid-col-span-2">
+                         <select class="form-select">
+                            <option value=">">&gt; (Greater than)</option><option value="<">&lt; (Less than)</option>
+                        </select>
+                    </div>
+                    <div class="grid-col-span-1">
+                        <input type="number" step="0.1" class="form-input" value="80">
+                    </div>
+                </div>
+            `;
+            ELS.optimizerUi.constraintsContainer.insertAdjacentHTML('beforeend', constraintHTML);
+        }
+        ELS.optimizerUi.addConstraintBtn.addEventListener('click', addConstraint);
+        
+        ELS.forms.optimizer.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            // This is a placeholder for the multi-step Gemini conversation
+            // In a real scenario, this would involve a loop of API calls
+            showMessage("Starting AI Optimization... this is a simulation.");
+            ELS.optimizerUi.logContainer.classList.remove('hidden');
+            ELS.optimizerUi.logEntries.innerHTML = '';
+
+            // Simulated steps
+            setTimeout(() => addOptimizerLog("Step 1: AI is analyzing your goal..."), 500);
+            setTimeout(() => addOptimizerLog("Step 2: Testing initial blend with high RON..."), 1500);
+            setTimeout(() => addOptimizerLog("Step 3: Adjusting Olefins to meet constraints..."), 2500);
+            setTimeout(() => addOptimizerLog("Step 4: Finalizing blend with maximized Density..."), 3500);
+            setTimeout(() => {
+                const finalResult = {
+                    status: "success",
+                    prediction: [{"RON": 98.5, "MON": 88.2, "Density": 0.75, "Aromatics": 35.1, "Olefins": 12.5}],
+                    model_metrics: {"rmse": 0.2488, "overall_r2": 0.94}
+                };
+                displayResults(finalResult, true);
+                const finalCard = ELS.results.div.innerHTML;
+                ELS.results.container.classList.add('hidden');
+                addOptimizerLog("Optimization Complete! Best blend found:", true, finalCard);
+            }, 4500);
+        });
+
+        function addOptimizerLog(message, isFinal = false, content = '') {
+            const entry = document.createElement('div');
+            entry.className = 'optimizer-log-entry';
+            if (isFinal) {
+                entry.classList.add('optimizer-recommendation');
+            }
+            entry.innerHTML = `<p>${message}</p>${content}`;
+            ELS.optimizerUi.logEntries.appendChild(entry);
+            entry.scrollIntoView({ behavior: 'smooth' });
+        }
+        
+        updateUI();
+        switchAuthForm(true);
+        switchEngineMode(true);
+    });
+    </script>
+</body>
+</html>
